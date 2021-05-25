@@ -6,6 +6,8 @@
 #
 
 from abc import ABC, abstractmethod
+from functools import partial
+from typing import Callable
 from sklearn.gaussian_process import GaussianProcessRegressor
 import numpy as np
 
@@ -93,35 +95,50 @@ class GaussianProcessesStrategy(ThompsonStrategy):
     def __init__(
         self,
         num_parameters: int,
-        mu: "list[int | float]",
-        sigma: "list[int | float]",
+        interval: "np.ndarray | list[np.ndarray]",
+        fitness: Callable,
         beta: float,
     ):
         super().__init__()
         self.num_parameters = num_parameters
-        self.mu = mu
-        self.sigma = sigma
+        if isinstance(interval, list):
+            if len(interval) != self.num_parameters:
+                raise ValueError(
+                    "When passing a list the length should be the same as num_parameters"
+                )
+            else:
+                mesh = np.meshgrid(*interval)
+
+        elif isinstance(interval, np.ndarray):
+            mesh = np.meshgrid(*[interval for _ in range(self.num_parameters)])
+
+        mapfunc = partial(np.ravel, order="A")
+        self.X_grid = np.column_stack(list(map(mapfunc, mesh)))
+
+        self.fitness = fitness
+        self.mu = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
+        self.sigma = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
         self.beta = beta
         self.gp = GaussianProcessRegressor()
-        self.X_grid = np.array(
-            np.meshgrid(*[np.arange(-1, 1, 0.1) for _ in range(self.num_parameters)])
-        )
-        self.X_grid = self.X_grid.reshape(self.X_grid.shape[0], -1, order="A").T
-        print(self.X_grid[:, 0])
         self.X = np.array([])
         self.y = np.array([])
 
     def sample(self):
         # Fit the GP to the observations we have
-        self.gp = self.gp.fit(self.X, self.y)
+        grid_idx = (self.mu + self.sigma * np.sqrt(self.beta)).argmax()
+        params = self.X_grid[grid_idx]
+        self.X = np.append(self.X, params)
+        self.t = np.append(self.y, self.fitness(params))
 
         # Draw one sample from the posterior
         posterior_sample = self.gp.sample_y(self.X_grid.reshape(-1, 1), 1).T[0]
         return posterior_sample
 
     def update(self, reward, action):
-        return super().update(reward, action)
+        self.gp = self.gp.fit(self.X, self.y)
+        self.mu, self.sigma = self.gp.predict(self.X_grid, return_std=True)
 
 
-gp = GaussianProcessesStrategy(3, [0.1, 0.2], [0.1, 0.2], 200)
+gp = GaussianProcessesStrategy(4, np.arange(-1, 1, 0.1), 1)
 # print(gp.X_grid.shape)
+gp.update(0, 0)
