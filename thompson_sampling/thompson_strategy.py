@@ -117,20 +117,22 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         self.sigma = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
         self.beta = beta
         self.gp = GaussianProcessRegressor()
-        self.X = np.array([])
-        self.y = np.array([])
+        self.X = []
+        self.y = []
 
     def sample(self):
-        # Fit the GP to the observations we have
-        grid_idx = (self.mu + self.sigma * np.sqrt(self.beta)).argmax()
+        if len(self.X) < 25:
+            grid_idx = np.random.randint(self.X_grid.shape[0])
+        else:
+            grid_idx = (self.mu.flatten() + self.sigma * np.sqrt(self.beta)).argmax()
         params = self.X_grid[grid_idx]
         return params
 
-    def update(self, reward, action):
-        self.X = np.append(self.X, action)
-        self.y = np.append(self.y, reward)
-        if self.X.shape[0] < 25:
+    def update(self, reward, params):
+        self.X.append(params)
+        self.y.append(reward)
+        if len(self.X) < 25:
             return
         self.gp = GaussianProcessRegressor()
-        self.gp = self.gp.fit(self.X.reshape(-1, 1), self.y)
+        self.gp = self.gp.fit(self.X, self.y)
         self.mu, self.sigma = self.gp.predict(self.X_grid, return_std=True)
