@@ -49,21 +49,24 @@ class ThompsonSampling(object):
                 r = pool.apply_async(self.fitness_function, (self.strategy.sample(),))
                 results.append(r)
 
-            while epoch < self.epochs:
+            while epoch < self.epochs * self.num_processors:
                 r = results.pop(0)
                 if r.ready():
                     x = r.get()
                     self.strategy.update(*x)
                     if "on_update" in self.callbacks:
+                        epoch_tmp = np.round(epoch / self.num_processors, 5)
                         if self.callbacks["on_update"](
-                            epoch, self.strategy, epoch == self.epochs - 1
+                            epoch_tmp,
+                            self.strategy,
+                            (self.epochs - 1 / self.num_processors) - epoch_tmp < 1e-5,
                         ):
                             break
 
                     results.append(
                         pool.apply_async(self.fitness_function, (self.strategy.sample(),))
                     )
-                    epoch += 1 / self.num_processors
+                    epoch += 1
                 else:
                     results.append(r)
 
