@@ -6,9 +6,11 @@
 #
 
 import multiprocessing as mp
+from typing import Callable
 import numpy as np
-from functools import reduce
-from copy import deepcopy
+
+# from functools import reduce
+# from copy import deepcopy
 from .thompson_strategy import ThompsonStrategy
 
 
@@ -17,7 +19,7 @@ class ThompsonSampling(object):
         self,
         thompson_strategy: ThompsonStrategy,
         epochs: int,
-        fitness_function: callable,
+        fitness_function: Callable,
         callbacks: dict = {},
         num_processors: int = 1,
     ):
@@ -43,7 +45,7 @@ class ThompsonSampling(object):
         epoch = 0.0
 
         with mp.Pool(processes=self.num_processors) as pool:
-            for p in range(self.num_processors):
+            for _ in range(self.num_processors):
                 r = pool.apply_async(self.fitness_function, (self.strategy.sample(),))
                 results.append(r)
 

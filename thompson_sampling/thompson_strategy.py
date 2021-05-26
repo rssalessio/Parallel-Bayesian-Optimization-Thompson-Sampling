@@ -7,7 +7,6 @@
 
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Callable
 from sklearn.gaussian_process import GaussianProcessRegressor
 import numpy as np
 
@@ -96,7 +95,6 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         self,
         num_parameters: int,
         interval: "np.ndarray | list[np.ndarray]",
-        fitness: Callable,
         beta: float,
     ):
         super().__init__()
@@ -115,8 +113,7 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         mapfunc = partial(np.ravel, order="A")
         self.X_grid = np.column_stack(list(map(mapfunc, mesh)))
 
-        self.fitness = fitness
-        self.mu = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
+        self.mu = np.array([0.0 for _ in range(self.X_grid.shape[0])])
         self.sigma = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
         self.beta = beta
         self.gp = GaussianProcessRegressor()
@@ -127,18 +124,13 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         # Fit the GP to the observations we have
         grid_idx = (self.mu + self.sigma * np.sqrt(self.beta)).argmax()
         params = self.X_grid[grid_idx]
-        self.X = np.append(self.X, params)
-        self.t = np.append(self.y, self.fitness(params))
-
-        # Draw one sample from the posterior
-        posterior_sample = self.gp.sample_y(self.X_grid.reshape(-1, 1), 1).T[0]
-        return posterior_sample
+        return params
 
     def update(self, reward, action):
-        self.gp = self.gp.fit(self.X, self.y)
+        self.X = np.append(self.X, action)
+        self.y = np.append(self.y, reward)
+        if self.X.shape[0] < 25:
+            return
+        self.gp = GaussianProcessRegressor()
+        self.gp = self.gp.fit(self.X.reshape(-1, 1), self.y)
         self.mu, self.sigma = self.gp.predict(self.X_grid, return_std=True)
-
-
-gp = GaussianProcessesStrategy(4, np.arange(-1, 1, 0.1), 1)
-# print(gp.X_grid.shape)
-gp.update(0, 0)
