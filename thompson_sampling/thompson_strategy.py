@@ -8,6 +8,7 @@
 from abc import ABC, abstractmethod
 from functools import partial
 from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 import numpy as np
 
 
@@ -105,26 +106,27 @@ class GaussianProcessesStrategy(ThompsonStrategy):
                     "When passing a list the length should be the same as num_parameters"
                 )
             else:
-                mesh = np.meshgrid(*interval)
+                self.mesh = np.meshgrid(*interval)
 
         elif isinstance(interval, np.ndarray):
-            mesh = np.meshgrid(*[interval for _ in range(self.num_parameters)])
+            self.mesh = np.meshgrid(*[interval for _ in range(self.num_parameters)])
 
         mapfunc = partial(np.ravel, order="A")
-        self.X_grid = np.column_stack(list(map(mapfunc, mesh)))
+        self.X_grid = np.column_stack(list(map(mapfunc, self.mesh)))
 
         self.mu = np.array([0.0 for _ in range(self.X_grid.shape[0])])
         self.sigma = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
         self.beta = beta
-        self.gp = GaussianProcessRegressor()
+        kernel = C(1, (1e-3, 1e1)) * RBF(1, (1e-2, 1e1)) + WhiteKernel()
+        self.gp = GaussianProcessRegressor(kernel=kernel)
         self.X = []
         self.y = []
 
     def sample(self):
-        if len(self.X) < 25:
-            grid_idx = np.random.randint(self.X_grid.shape[0])
-        else:
-            grid_idx = (self.mu.flatten() + self.sigma * np.sqrt(self.beta)).argmax()
+        # if len(self.X) < 25:
+        #     grid_idx = np.random.randint(self.X_grid.shape[0])
+        # else:
+        grid_idx = (self.mu.flatten() + self.sigma * np.sqrt(self.beta)).argmax()
         params = self.X_grid[grid_idx]
         return params
 
@@ -133,6 +135,5 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         self.y.append(reward)
         if len(self.X) < 25:
             return
-        self.gp = GaussianProcessRegressor()
         self.gp = self.gp.fit(self.X, self.y)
         self.mu, self.sigma = self.gp.predict(self.X_grid, return_std=True)
