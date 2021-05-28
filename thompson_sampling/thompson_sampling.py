@@ -59,7 +59,7 @@ class ThompsonSampling(object):
                         if self.callbacks["on_update"](
                             epoch_tmp,
                             self.strategy,
-                            (self.epochs - 1 / self.num_processors) - epoch_tmp < 1e-5,
+                            np.isclose(self.epochs - 1 / self.num_processors, epoch_tmp),
                         ):
                             break
 
