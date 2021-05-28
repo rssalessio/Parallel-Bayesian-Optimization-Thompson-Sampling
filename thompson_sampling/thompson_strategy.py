@@ -6,7 +6,7 @@
 #
 
 from abc import ABC, abstractmethod
-from functools import partial
+from typing import Union
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 import numpy as np
@@ -95,11 +95,18 @@ class GaussianProcessesStrategy(ThompsonStrategy):
     def __init__(
         self,
         num_parameters: int,
-        interval: "np.ndarray | list[np.ndarray]",
-        beta: float,
+        interval: Union[np.ndarray, "list[np.ndarray]"],
+        beta: float = 1.0,
+        mu_init: float = 0.0,
+        sigma_init: float = 0.5,
+        gp_regressor=None,
+        fit_threshold: int = 25,
     ):
         super().__init__()
         self.num_parameters = num_parameters
+        self.mu_init = mu_init
+        self.sigma_init = sigma_init
+        self.fit_threshold = fit_threshold
         if isinstance(interval, list):
             if len(interval) != self.num_parameters:
                 raise ValueError(
@@ -109,31 +116,33 @@ class GaussianProcessesStrategy(ThompsonStrategy):
                 self.mesh = np.meshgrid(*interval)
 
         elif isinstance(interval, np.ndarray):
-            self.mesh = np.meshgrid(*[interval for _ in range(self.num_parameters)])
+            self.mesh = np.meshgrid(*[interval] * self.num_parameters)
 
-        mapfunc = partial(np.ravel, order="A")
-        self.X_grid = np.column_stack(list(map(mapfunc, self.mesh)))
+        self.X_grid = np.column_stack(list(map(np.ravel, self.mesh)))
+        if gp_regressor is None:
+            kernel = C(1, (1e-3, 1e1)) * RBF(1, (1e-2, 1e1)) + WhiteKernel()
+            self.gp = GaussianProcessRegressor(kernel=kernel)
+        else:
+            self.gp = gp_regressor
 
-        self.mu = np.array([0.0 for _ in range(self.X_grid.shape[0])])
-        self.sigma = np.array([np.random.randn() for _ in range(self.X_grid.shape[0])])
+        self.mu: np.ndarray = np.array([self.mu_init] * self.X_grid.shape[0])
+        self.sigma: np.ndarray = np.array([self.sigma_init] * self.X_grid.shape[0])
         self.beta = beta
-        kernel = C(1, (1e-3, 1e1)) * RBF(1, (1e-2, 1e1)) + WhiteKernel()
-        self.gp = GaussianProcessRegressor(kernel=kernel)
         self.X = []
         self.y = []
 
     def sample(self):
-        # if len(self.X) < 25:
-        #     grid_idx = np.random.randint(self.X_grid.shape[0])
-        # else:
-        grid_idx = (self.mu.flatten() + self.sigma * np.sqrt(self.beta)).argmax()
+        if len(self.X) < self.fit_threshold:
+            grid_idx = np.random.randint(self.X_grid.shape[0])
+        else:
+            grid_idx = (self.mu.flatten() + self.sigma.flatten() * np.sqrt(self.beta)).argmax()
         params = self.X_grid[grid_idx]
         return params
 
     def update(self, reward, params):
         self.X.append(params)
         self.y.append(reward)
-        if len(self.X) < 25:
+        if len(self.X) < self.fit_threshold:
             return
         self.gp = self.gp.fit(self.X, self.y)
         self.mu, self.sigma = self.gp.predict(self.X_grid, return_std=True)
