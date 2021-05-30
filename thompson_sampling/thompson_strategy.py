@@ -101,12 +101,14 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         sigma_init: float = 0.5,
         gp_regressor=None,
         fit_threshold: int = 25,
+        update_freq: int = 5,
     ):
         super().__init__()
         self.num_parameters = num_parameters
         self.mu_init = mu_init
         self.sigma_init = sigma_init
         self.fit_threshold = fit_threshold
+        self.update_freq = update_freq
         if isinstance(interval, list):
             if len(interval) != self.num_parameters:
                 raise ValueError(
@@ -128,21 +130,29 @@ class GaussianProcessesStrategy(ThompsonStrategy):
         self.mu: np.ndarray = np.array([self.mu_init] * self.X_grid.shape[0])
         self.sigma: np.ndarray = np.array([self.sigma_init] * self.X_grid.shape[0])
         self.beta = beta
-        self.X = []
-        self.y = []
+        self.t: int = 0  # Number of times we have sampled with gp-ucb
+        self.N: np.ndarray = np.zeros_like(
+            self.mu
+        )  # number of times we sampled a given X for time t
+        self.X: list = []
+        self.y: list = []
 
     def sample(self):
         if len(self.X) < self.fit_threshold:
             grid_idx = np.random.randint(self.X_grid.shape[0])
         else:
-            grid_idx = (self.mu.flatten() + self.sigma.flatten() * np.sqrt(self.beta)).argmax()
+            self.t += 1
+            beta = self.beta * np.sqrt(1 + self.t * np.log(self.t) ** 2 / np.maximum(self.N, 1))
+            grid_idx = (self.mu.flatten() + self.sigma.flatten() * np.sqrt(beta)).argmax()
+
+        self.N[grid_idx] += 1
         params = self.X_grid[grid_idx]
         return params
 
     def update(self, reward, params):
         self.X.append(params)
         self.y.append(reward)
-        if len(self.X) < self.fit_threshold:
+        if len(self.X) < self.fit_threshold or len(self.X) % self.update_freq != 0:
             return
         self.gp = self.gp.fit(self.X, self.y)
         self.mu, self.sigma = self.gp.predict(self.X_grid, return_std=True)
