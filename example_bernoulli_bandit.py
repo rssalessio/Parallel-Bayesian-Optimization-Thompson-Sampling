@@ -8,6 +8,7 @@
 import sys
 import numpy as np
 from thompson_sampling import ThompsonSampling, BernoulliThompsonStrategy
+
 sys.path.append("..")
 
 # Example Bernolli Bandit
@@ -27,22 +28,22 @@ def fitness(arm: int):
 
 def on_update(epoch, strategy, last_epoch):
     if epoch % 10 == 0:
-        print('Epoch {} - Parameters mean {}'.format(epoch, strategy.mean))
+        print("Epoch {} - Parameters mean {}".format(epoch, strategy.mean))
     if np.any(strategy.mean > 0.9) or last_epoch:
-        print('Search is over!')
-        print('Epoch {} - Parameters mean {}'.format(epoch, strategy.mean))
-        print('Epoch {} - Number of times an arm as selected {}'.format(
-            epoch, strategy.selections))
+        print("Search is over!")
+        print("Epoch {} - Parameters mean {}".format(epoch, strategy.mean))
+        print("Epoch {} - Number of times an arm as selected {}".format(epoch, strategy.selections))
         return True
     return False
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     strategy = BernoulliThompsonStrategy(4, 1, 1)
     ts = ThompsonSampling(
         thompson_strategy=strategy,
         epochs=100,
         fitness_function=fitness,
-        callbacks={'on_update': on_update},
-        num_processors=1)
+        callbacks={"on_update": on_update},
+        num_processors=1,
+    )
     strategy = ts.run()
